@@ -1,9 +1,10 @@
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
+  KeyboardAvoidingView,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,13 +13,14 @@ import {
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 
+import { MemoryForm } from '@/components/MemoryForm';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useDatabase } from '@/contexts/DatabaseContext';
-import { deleteMemory, getMemoryById } from '@/db/memoryRepository';
-import { ensureHttpUrl, formatDateTime } from '@/lib/format';
+import { deleteMemory, getMemoryById, updateMemory } from '@/db/memoryRepository';
+import { ensureHttpUrl } from '@/lib/format';
 import { deleteLocalImage } from '@/lib/images';
-import type { MemoryItem } from '@/types/memory';
+import type { MemoryInput, MemoryItem } from '@/types/memory';
 
 export default function MemoryDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -29,8 +31,9 @@ export default function MemoryDetailScreen() {
 
   const [item, setItem] = useState<MemoryItem | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) {
@@ -63,12 +66,8 @@ export default function MemoryDetailScreen() {
     }, [load])
   );
 
-  const handleOpenUrl = async () => {
-    if (!item?.url) {
-      return;
-    }
-
-    const target = ensureHttpUrl(item.url);
+  const handleOpenUrl = async (rawUrl: string) => {
+    const target = ensureHttpUrl(rawUrl);
     try {
       const canOpen = await Linking.canOpenURL(target);
       if (!canOpen) {
@@ -78,6 +77,30 @@ export default function MemoryDetailScreen() {
       await Linking.openURL(target);
     } catch {
       Alert.alert('エラー', '外部ブラウザを開けませんでした');
+    }
+  };
+
+  const handleSubmit = async (input: MemoryInput) => {
+    if (!item || saving) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const previousImage = item.imageUri;
+      const updated = await updateMemory(db, item.id, input);
+
+      if (previousImage && previousImage !== input.imageUri) {
+        await deleteLocalImage(previousImage);
+      }
+
+      setItem(updated);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '更新に失敗しました';
+      Alert.alert('エラー', message);
+      throw err;
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -138,198 +161,61 @@ export default function MemoryDetailScreen() {
   }
 
   return (
-    <ScrollView
-      style={{ backgroundColor: palette.background }}
-      contentContainerStyle={styles.content}
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: palette.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {item.imageUri ? (
-        <Image source={{ uri: item.imageUri }} style={styles.image} />
-      ) : (
-        <View
-          style={[
-            styles.imageFallback,
-            { backgroundColor: palette.imagePlaceholder, borderColor: palette.border },
-          ]}
-        >
-          <Text style={{ color: palette.textSecondary, fontWeight: '600' }}>画像なし</Text>
-        </View>
-      )}
-
-      <Text style={[styles.name, { color: palette.text }]}>{item.name}</Text>
-
-      {item.category ? (
-        <Text style={[styles.category, { color: palette.tint }]}>{item.category}</Text>
-      ) : (
-        <Text style={[styles.muted, { color: palette.textSecondary }]}>カテゴリ未設定</Text>
-      )}
-
-      <Section title="メモ" palette={palette}>
-        <Text style={[styles.body, { color: palette.text }]}>
-          {item.memo?.trim() || '未入力'}
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Text style={[styles.guide, { color: palette.textSecondary }]}>
+          この画面でそのまま編集できます
         </Text>
-      </Section>
-
-      <Section title="タグ" palette={palette}>
-        {item.tags.length > 0 ? (
-          <View style={styles.tags}>
-            {item.tags.map((tag) => (
-              <View
-                key={tag}
-                style={[styles.tag, { backgroundColor: palette.chip }]}
-              >
-                <Text style={{ color: palette.text, fontSize: 13 }}>#{tag}</Text>
-              </View>
-            ))}
-          </View>
-        ) : (
-          <Text style={[styles.body, { color: palette.text }]}>未設定</Text>
-        )}
-      </Section>
-
-      <Section title="URL" palette={palette}>
-        {item.url ? (
-          <Pressable onPress={handleOpenUrl}>
-            <Text style={[styles.link, { color: palette.tint }]}>{item.url}</Text>
-            <Text style={[styles.muted, { color: palette.textSecondary, marginTop: 4 }]}>
-              タップして外部ブラウザで開く
-            </Text>
-          </Pressable>
-        ) : (
-          <Text style={[styles.body, { color: palette.text }]}>未設定</Text>
-        )}
-      </Section>
-
-      <Section title="日時" palette={palette}>
-        <Text style={[styles.body, { color: palette.text }]}>
-          登録: {formatDateTime(item.createdAt)}
-        </Text>
-        <Text style={[styles.body, { color: palette.text, marginTop: 4 }]}>
-          更新: {formatDateTime(item.updatedAt)}
-        </Text>
-      </Section>
-
-      <View style={styles.actions}>
-        <Pressable
-          onPress={() => router.push(`/item/${item.id}/edit`)}
-          style={[styles.primaryButton, { backgroundColor: palette.tint }]}
-        >
-          <Text style={[styles.primaryButtonText, { color: palette.fabText }]}>編集する</Text>
-        </Pressable>
-        <Pressable
-          onPress={handleDelete}
-          disabled={deleting}
-          style={[styles.dangerButton, { borderColor: palette.danger }]}
-        >
-          {deleting ? (
-            <ActivityIndicator color={palette.danger} />
-          ) : (
-            <Text style={{ color: palette.danger, fontWeight: '700' }}>削除する</Text>
-          )}
-        </Pressable>
-      </View>
-    </ScrollView>
-  );
-}
-
-function Section({
-  title,
-  children,
-  palette,
-}: {
-  title: string;
-  children: ReactNode;
-  palette: (typeof Colors)['light'];
-}) {
-  return (
-    <View style={[styles.section, { borderTopColor: palette.border }]}>
-      <Text style={[styles.sectionTitle, { color: palette.textSecondary }]}>{title}</Text>
-      {children}
-    </View>
+        <MemoryForm
+          key={item.id + item.updatedAt}
+          variant="edit"
+          initial={item}
+          submitLabel="保存する"
+          onSubmit={handleSubmit}
+          saving={saving}
+          onOpenUrl={handleOpenUrl}
+          footer={
+            <Pressable
+              onPress={handleDelete}
+              disabled={deleting || saving}
+              style={[styles.dangerButton, { borderColor: palette.danger }]}
+            >
+              {deleting ? (
+                <ActivityIndicator color={palette.danger} />
+              ) : (
+                <Text style={{ color: palette.danger, fontWeight: '700' }}>削除する</Text>
+              )}
+            </Pressable>
+          }
+        />
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    padding: 16,
+  },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
   },
-  content: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  image: {
-    width: '100%',
-    height: 220,
-    borderRadius: 14,
-    marginBottom: 16,
-  },
-  imageFallback: {
-    width: '100%',
-    height: 120,
-    borderRadius: 14,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  name: {
-    fontSize: 28,
-    fontWeight: '800',
-    marginBottom: 6,
-  },
-  category: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  muted: {
+  guide: {
     fontSize: 13,
-  },
-  section: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 8,
-    letterSpacing: 0.4,
-  },
-  body: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  tags: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  tag: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  link: {
-    fontSize: 15,
     fontWeight: '600',
-  },
-  actions: {
-    marginTop: 28,
-    gap: 10,
-  },
-  primaryButton: {
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
+    marginBottom: 4,
   },
   dangerButton: {
+    marginTop: 10,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',

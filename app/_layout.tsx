@@ -73,15 +73,9 @@ function RootLayoutNav() {
             }}
           />
           <Stack.Screen
-            name="item/[id]"
+            name="item/[id]/index"
             options={{
               title: '詳細',
-            }}
-          />
-          <Stack.Screen
-            name="item/[id]/edit"
-            options={{
-              title: '編集',
             }}
           />
         </Stack>

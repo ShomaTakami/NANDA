@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -22,11 +22,27 @@ type Props = {
   submitLabel: string;
   onSubmit: (input: MemoryInput) => Promise<void>;
   saving: boolean;
+  /**
+   * create: 名前中心。詳細は折りたたみ。
+   * edit: 詳細画面向け。全項目を最初から編集可能にする。
+   */
+  variant?: 'create' | 'edit';
+  onOpenUrl?: (url: string) => void;
+  footer?: ReactNode;
 };
 
-export function MemoryForm({ initial, submitLabel, onSubmit, saving }: Props) {
+export function MemoryForm({
+  initial,
+  submitLabel,
+  onSubmit,
+  saving,
+  variant = 'create',
+  onOpenUrl,
+  footer,
+}: Props) {
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
+  const isEdit = variant === 'edit';
 
   const [name, setName] = useState(initial?.name ?? '');
   const [category, setCategory] = useState(initial?.category ?? '');
@@ -35,18 +51,39 @@ export function MemoryForm({ initial, submitLabel, onSubmit, saving }: Props) {
   const [url, setUrl] = useState(initial?.url ?? '');
   const [imageUri, setImageUri] = useState<string | null>(initial?.imageUri ?? null);
   const [showDetails, setShowDetails] = useState(
-    Boolean(
-      initial?.category ||
-        initial?.memo ||
-        (initial?.tags && initial.tags.length > 0) ||
-        initial?.imageUri ||
-        initial?.url
-    )
+    isEdit ||
+      Boolean(
+        initial?.category ||
+          initial?.memo ||
+          (initial?.tags && initial.tags.length > 0) ||
+          initial?.imageUri ||
+          initial?.url
+      )
   );
   const [error, setError] = useState<string | null>(null);
   const [pickingImage, setPickingImage] = useState(false);
 
-  const canSave = name.trim().length > 0 && !saving;
+  const detailsVisible = isEdit || showDetails;
+
+  const isDirty = useMemo(() => {
+    if (!isEdit) {
+      return true;
+    }
+
+    const nextTags = parseTagInput(tagsText).join('\u0001');
+    const prevTags = (initial?.tags ?? []).join('\u0001');
+
+    return (
+      name.trim() !== (initial?.name ?? '').trim() ||
+      (normalizeOptionalText(category) ?? '') !== (initial?.category ?? '') ||
+      (normalizeOptionalText(memo) ?? '') !== (initial?.memo ?? '') ||
+      nextTags !== prevTags ||
+      (normalizeOptionalText(url) ?? '') !== (initial?.url ?? '') ||
+      (imageUri ?? null) !== (initial?.imageUri ?? null)
+    );
+  }, [isEdit, name, category, memo, tagsText, url, imageUri, initial]);
+
+  const canSave = name.trim().length > 0 && !saving && isDirty;
 
   const handlePickImage = async () => {
     try {
@@ -71,7 +108,9 @@ export function MemoryForm({ initial, submitLabel, onSubmit, saving }: Props) {
 
       const persisted = await persistImage(result.assets[0].uri);
       setImageUri(persisted);
-      setShowDetails(true);
+      if (!isEdit) {
+        setShowDetails(true);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : '画像の選択に失敗しました';
       setError(message);
@@ -114,21 +153,25 @@ export function MemoryForm({ initial, submitLabel, onSubmit, saving }: Props) {
           styles.nameInput,
           { color: palette.text, backgroundColor: palette.surface, borderColor: palette.border },
         ]}
-        autoFocus={!initial}
+        autoFocus={!initial && !isEdit}
         returnKeyType="done"
         onSubmitEditing={handleSubmit}
       />
-      <Text style={[styles.hint, { color: palette.textSecondary }]}>
-        名前だけでも保存できます
-      </Text>
-
-      <Pressable onPress={() => setShowDetails((prev) => !prev)} style={styles.detailsToggle}>
-        <Text style={{ color: palette.tint, fontWeight: '700', fontSize: 14 }}>
-          {showDetails ? '詳細を閉じる' : '詳細を追加（カテゴリ・メモ・タグ・画像・URL）'}
+      {!isEdit ? (
+        <Text style={[styles.hint, { color: palette.textSecondary }]}>
+          名前だけでも保存できます
         </Text>
-      </Pressable>
+      ) : null}
 
-      {showDetails ? (
+      {!isEdit ? (
+        <Pressable onPress={() => setShowDetails((prev) => !prev)} style={styles.detailsToggle}>
+          <Text style={{ color: palette.tint, fontWeight: '700', fontSize: 14 }}>
+            {showDetails ? '詳細を閉じる' : '詳細を追加（カテゴリ・メモ・タグ・画像・URL）'}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {detailsVisible ? (
         <View style={styles.details}>
           <Text style={[styles.label, { color: palette.text }]}>カテゴリ</Text>
           <CategoryChips value={category} onChange={setCategory} />
@@ -187,6 +230,13 @@ export function MemoryForm({ initial, submitLabel, onSubmit, saving }: Props) {
             autoCapitalize="none"
             keyboardType="url"
           />
+          {isEdit && url.trim() && onOpenUrl ? (
+            <Pressable onPress={() => onOpenUrl(url)} style={styles.openUrl}>
+              <Text style={{ color: palette.tint, fontWeight: '700', fontSize: 14 }}>
+                このURLを開く
+              </Text>
+            </Pressable>
+          ) : null}
 
           <Text style={[styles.label, { color: palette.text }]}>画像</Text>
           {imageUri ? (
@@ -226,6 +276,17 @@ export function MemoryForm({ initial, submitLabel, onSubmit, saving }: Props) {
         </View>
       ) : null}
 
+      {isEdit ? (
+        <View style={[styles.meta, { borderTopColor: palette.border }]}>
+          <Text style={[styles.metaText, { color: palette.textSecondary }]}>
+            登録: {initial?.createdAt ? formatCompact(initial.createdAt) : '-'}
+          </Text>
+          <Text style={[styles.metaText, { color: palette.textSecondary }]}>
+            更新: {initial?.updatedAt ? formatCompact(initial.updatedAt) : '-'}
+          </Text>
+        </View>
+      ) : null}
+
       {error ? <Text style={[styles.error, { color: palette.danger }]}>{error}</Text> : null}
 
       <Pressable
@@ -241,13 +302,33 @@ export function MemoryForm({ initial, submitLabel, onSubmit, saving }: Props) {
         {saving ? (
           <ActivityIndicator color={palette.fabText} />
         ) : (
-          <Text style={[styles.submitText, { color: canSave ? palette.fabText : palette.textSecondary }]}>
-            {submitLabel}
+          <Text
+            style={[
+              styles.submitText,
+              { color: canSave ? palette.fabText : palette.textSecondary },
+            ]}
+          >
+            {isEdit && !isDirty ? '変更なし' : submitLabel}
           </Text>
         )}
       </Pressable>
+
+      {footer}
     </View>
   );
+}
+
+function formatCompact(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${y}/${m}/${d} ${hh}:${mm}`;
 }
 
 const styles = StyleSheet.create({
@@ -286,6 +367,9 @@ const styles = StyleSheet.create({
   details: {
     gap: 8,
   },
+  openUrl: {
+    paddingVertical: 4,
+  },
   preview: {
     width: '100%',
     height: 180,
@@ -311,6 +395,15 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     minWidth: 120,
     alignItems: 'center',
+  },
+  meta: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 4,
+  },
+  metaText: {
+    fontSize: 12,
   },
   error: {
     marginTop: 8,
