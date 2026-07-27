@@ -16,7 +16,7 @@
 ## 使用技術
 
 - React Native
-- Expo (SDK 57)
+- Expo (SDK 56)
 - TypeScript
 - Expo Router
 - SQLite (`expo-sqlite`)

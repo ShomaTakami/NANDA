@@ -48,7 +48,10 @@
         {
           "photosPermission": "覚えておきたい項目の画像を登録するために、写真ライブラリへのアクセスが必要です。"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
