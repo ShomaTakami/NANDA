@@ -78,6 +78,12 @@ function RootLayoutNav() {
               title: '詳細',
             }}
           />
+          <Stack.Screen
+            name="item/[id]/edit"
+            options={{
+              headerShown: false,
+            }}
+          />
         </Stack>
       </DatabaseProvider>
     </ThemeProvider>

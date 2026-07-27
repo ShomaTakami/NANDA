@@ -166,9 +166,6 @@ export default function MemoryDetailScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={[styles.guide, { color: palette.textSecondary }]}>
-          この画面でそのまま編集できます
-        </Text>
         <MemoryForm
           key={item.id + item.updatedAt}
           variant="edit"
@@ -208,11 +205,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
-  },
-  guide: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 4,
   },
   dangerButton: {
     marginTop: 10,
